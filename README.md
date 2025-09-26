@@ -1,141 +1,119 @@
-# Task Manager Website
+# Task Manager with Database Integration
 
-A modern, responsive task management application built with HTML, CSS, and JavaScript. This application provides a complete CRUD (Create, Read, Update, Delete) interface for managing tasks with a beautiful, intuitive design.
+A modern, responsive task management application with real-time database storage.
 
 ## Features
 
-### ✨ Core Functionality
-- **Create Tasks**: Add new tasks with title, description, priority, due date, and category
-- **Read Tasks**: View all tasks with filtering and sorting options
-- **Update Tasks**: Edit existing task details through a modal interface
-- **Delete Tasks**: Remove tasks with confirmation dialog
-- **Toggle Status**: Mark tasks as completed or pending
+- ✅ Create, read, update, and delete tasks
+- 🔍 Search and filter tasks
+- 📊 Task statistics dashboard
+- 🎨 Modern, responsive UI
+- 💾 Real-time database storage (Supabase)
+- 🔐 User authentication
+- 📱 Mobile-friendly design
 
-### 🔍 Advanced Features
-- **Smart Filtering**: Filter tasks by status (All, Pending, Completed, Overdue)
-- **Search Functionality**: Search tasks by title, description, or category
-- **Multiple Sorting Options**: Sort by due date, priority, title, or creation date
-- **Priority Levels**: High, Medium, and Low priority with color coding
-- **Categories**: Organize tasks by work, personal, shopping, health, education, or other
-- **Due Date Management**: Set and track due dates with overdue detection
+## Setup Instructions
 
-### 📊 Statistics Dashboard
-- **Real-time Counts**: View total, pending, completed, and overdue task counts
-- **Visual Indicators**: Color-coded statistics with hover effects
-- **Dynamic Updates**: Statistics update automatically as tasks change
+### 1. Install Dependencies
 
-### 🎨 User Experience
-- **Responsive Design**: Works perfectly on desktop, tablet, and mobile devices
-- **Modern UI**: Beautiful gradient backgrounds and smooth animations
-- **Toast Notifications**: Success, error, and info messages for user feedback
-- **Modal Dialogs**: Clean edit and delete confirmation interfaces
-- **Local Storage**: Data persists between browser sessions
-
-## How to Use
-
-### Getting Started
-1. Open `index.html` in your web browser
-2. The application will load with an empty task list
-3. Start by adding your first task using the form at the top
-
-### Adding Tasks
-1. Fill in the task title (required)
-2. Add an optional description
-3. Select priority level (Low, Medium, High)
-4. Choose a due date (optional)
-5. Select a category
-6. Click "Add Task"
-
-### Managing Tasks
-- **Complete Task**: Click the green "Complete" button
-- **Edit Task**: Click the blue "Edit" button to modify task details
-- **Delete Task**: Click the red "Delete" button (requires confirmation)
-- **Undo Completion**: Click "Undo" to mark a completed task as pending again
-
-### Filtering and Searching
-- **Search Box**: Type to search across all task fields
-- **Filter Buttons**: Click to show only specific task statuses
-- **Sort Dropdown**: Choose how to order your tasks
-
-### Task Organization
-- **Priority Colors**: 
-  - 🔴 High Priority (Red)
-  - 🟡 Medium Priority (Yellow)
-  - 🔵 Low Priority (Blue)
-- **Status Indicators**:
-  - ⏰ Pending (Default)
-  - ✅ Completed (Green border)
-  - ⚠️ Overdue (Red border, red background)
-
-## File Structure
-
-```
-Task_Manager/
-├── index.html          # Main HTML file with the application structure
-├── styles.css          # CSS styling and responsive design
-├── script.js           # JavaScript functionality and CRUD operations
-└── README.md           # This documentation file
+```bash
+npm install
 ```
 
-## Technical Details
+### 2. Set up Supabase Database
 
-### Technologies Used
-- **HTML5**: Semantic markup and form elements
-- **CSS3**: Modern styling with Flexbox, Grid, and CSS animations
-- **JavaScript ES6+**: Class-based architecture with modern JavaScript features
-- **Local Storage**: Browser-based data persistence
-- **Font Awesome**: Icon library for visual elements
+1. Go to [supabase.com](https://supabase.com) and create a free account
+2. Create a new project
+3. Go to Settings > API to get your project URL and anon key
+4. Create a `.env` file in the project root:
 
-### Browser Compatibility
-- Chrome (recommended)
-- Firefox
-- Safari
-- Edge
-- Mobile browsers
-
-### Data Storage
-- All data is stored locally in the browser's localStorage
-- No external databases or servers required
-- Data persists between browser sessions
-- Export/import functionality can be easily added
-
-## Customization
-
-### Adding New Categories
-To add new task categories, modify the `select` elements in both the add and edit forms in `index.html`:
-
-```html
-<option value="new-category">New Category</option>
+```env
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-### Changing Colors
-Modify the CSS variables and color classes in `styles.css` to match your preferred color scheme.
+### 3. Database Schema
 
-### Adding New Features
-The modular JavaScript architecture makes it easy to add new features:
-- New task properties can be added to the task object
-- Additional filters can be implemented in the `filterTasks()` method
-- New sorting options can be added to the `sortTasks()` method
+Run this SQL in your Supabase SQL editor:
 
-## Future Enhancements
+```sql
+-- Create tasks table
+CREATE TABLE tasks (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  priority TEXT NOT NULL DEFAULT 'medium',
+  due_date DATE,
+  category TEXT NOT NULL DEFAULT 'other',
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  completed_at TIMESTAMP WITH TIME ZONE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE
+);
 
-Potential features that could be added:
-- **Task Export/Import**: JSON or CSV file support
-- **Task Templates**: Predefined task structures
-- **Recurring Tasks**: Daily, weekly, or monthly repeating tasks
-- **Task Dependencies**: Tasks that depend on other tasks
-- **Time Tracking**: Log time spent on tasks
-- **Collaboration**: Share tasks with others
-- **Cloud Sync**: Multiple device synchronization
+-- Enable Row Level Security
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+
+-- Create policies
+CREATE POLICY "Users can view their own tasks" ON tasks
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own tasks" ON tasks
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own tasks" ON tasks
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own tasks" ON tasks
+  FOR DELETE USING (auth.uid() = user_id);
+```
+
+### 4. Run the Application
+
+```bash
+npm run dev
+```
+
+The application will open in your browser at `http://localhost:3000`.
+
+## Technologies Used
+
+- **Frontend**: HTML5, CSS3, JavaScript (ES6+)
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
+- **Styling**: Custom CSS with modern design
+- **Icons**: Font Awesome
+
+## Project Structure
+
+```
+task-manager/
+├── index.html          # Main HTML file
+├── styles.css         # CSS styles
+├── script.js          # Main JavaScript application
+├── database.js        # Database operations
+├── auth.js           # Authentication handling
+├── package.json      # Project dependencies
+└── README.md         # This file
+```
+
+## API Endpoints
+
+The application uses Supabase's auto-generated REST API:
+
+- `GET /tasks` - Fetch all tasks for the current user
+- `POST /tasks` - Create a new task
+- `PATCH /tasks/:id` - Update a task
+- `DELETE /tasks/:id` - Delete a task
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
 ## License
 
-This project is open source and available under the MIT License.
-
-## Support
-
-For questions or suggestions, please open an issue in the project repository.
-
----
-
-**Enjoy organizing your tasks and boosting your productivity! 🚀**
+MIT License - feel free to use this project for personal or commercial purposes.

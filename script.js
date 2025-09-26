@@ -1,16 +1,32 @@
 // Task Manager Application
 class TaskManager {
     constructor() {
-        this.tasks = JSON.parse(localStorage.getItem('tasks')) || [];
+        this.tasks = [];
         this.currentFilter = 'all';
         this.currentSort = 'dueDate';
         this.editingTaskId = null;
         this.deletingTaskId = null;
+        this.db = null;
+        this.auth = null;
+        this.realtimeSubscription = null;
         
         this.init();
     }
 
-    init() {
+    async init() {
+        // Initialize database and auth
+        this.db = new DatabaseManager();
+        this.auth = new AuthManager(this.db);
+        
+        // Wait for database to initialize
+        await this.db.init();
+        
+        // Check if user is authenticated
+        if (this.db.isAuthenticated()) {
+            await this.loadTasks();
+            this.setupRealtimeSubscription();
+        }
+        
         this.setupEventListeners();
         this.renderTasks();
         this.updateStats();
@@ -19,10 +35,10 @@ class TaskManager {
 
     setupEventListeners() {
         // Form submission
-        // document.getElementById('taskForm').addEventListener('submit', (e) => {
-        //     e.preventDefault();
-        //     this.addTask();
-        // });
+        document.getElementById('taskForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.addTask();
+        });
 
         // Search functionality
         document.getElementById('searchInput').addEventListener('input', (e) => {
@@ -70,7 +86,12 @@ class TaskManager {
         document.getElementById('taskDueDate').min = today;
     }
 
-    addTask() {
+    async addTask() {
+        if (!this.db.isAuthenticated()) {
+            this.showToast('Please sign in to add tasks', 'error');
+            return;
+        }
+
         const title = document.getElementById('taskTitle').value.trim();
         const description = document.getElementById('taskDescription').value.trim();
         const priority = document.getElementById('taskPriority').value;
@@ -82,28 +103,36 @@ class TaskManager {
             return;
         }
 
-        const task = {
-            id: Date.now().toString(),
+        const taskData = {
             title,
             description,
             priority,
-            dueDate,
+            due_date: dueDate || null,
             category,
             status: 'pending',
-            createdAt: new Date().toISOString(),
-            completedAt: null
+            completed_at: null
         };
 
-        this.tasks.push(task);
-        this.saveTasks();
-        this.renderTasks();
-        this.updateStats();
-        this.resetForm();
-        this.showToast('Task added successfully!', 'success');
+        const result = await this.db.createTask(taskData);
+        
+        if (result.success) {
+            this.tasks.unshift(result.task);
+            this.renderTasks();
+            this.updateStats();
+            this.resetForm();
+            this.showToast('Task added successfully!', 'success');
+        } else {
+            this.showToast(result.message || 'Failed to add task', 'error');
+        }
     }
 
-    updateTask() {
+    async updateTask() {
         if (!this.editingTaskId) return;
+
+        if (!this.db.isAuthenticated()) {
+            this.showToast('Please sign in to update tasks', 'error');
+            return;
+        }
 
         const title = document.getElementById('editTitle').value.trim();
         const description = document.getElementById('editDescription').value.trim();
@@ -116,22 +145,27 @@ class TaskManager {
             return;
         }
 
-        const taskIndex = this.tasks.findIndex(task => task.id === this.editingTaskId);
-        if (taskIndex !== -1) {
-            this.tasks[taskIndex] = {
-                ...this.tasks[taskIndex],
-                title,
-                description,
-                priority,
-                dueDate,
-                category
-            };
+        const updates = {
+            title,
+            description,
+            priority,
+            due_date: dueDate || null,
+            category
+        };
 
-            this.saveTasks();
+        const result = await this.db.updateTask(this.editingTaskId, updates);
+        
+        if (result.success) {
+            const taskIndex = this.tasks.findIndex(task => task.id === this.editingTaskId);
+            if (taskIndex !== -1) {
+                this.tasks[taskIndex] = result.task;
+            }
             this.renderTasks();
             this.updateStats();
             this.closeEditModal();
             this.showToast('Task updated successfully!', 'success');
+        } else {
+            this.showToast(result.message || 'Failed to update task', 'error');
         }
     }
 
@@ -143,29 +177,54 @@ class TaskManager {
         document.getElementById('deleteModal').style.display = 'block';
     }
 
-    confirmDelete() {
+    async confirmDelete() {
         if (!this.deletingTaskId) return;
 
-        this.tasks = this.tasks.filter(task => task.id !== this.deletingTaskId);
-        this.saveTasks();
-        this.renderTasks();
-        this.updateStats();
-        this.closeDeleteModal();
-        this.showToast('Task deleted successfully!', 'success');
-    }
+        if (!this.db.isAuthenticated()) {
+            this.showToast('Please sign in to delete tasks', 'error');
+            return;
+        }
 
-    toggleTaskStatus(taskId) {
-        const task = this.tasks.find(t => t.id === taskId);
-        if (task) {
-            task.status = task.status === 'completed' ? 'pending' : 'completed';
-            task.completedAt = task.status === 'completed' ? new Date().toISOString() : null;
-            
-            this.saveTasks();
+        const result = await this.db.deleteTask(this.deletingTaskId);
+        
+        if (result.success) {
+            this.tasks = this.tasks.filter(task => task.id !== this.deletingTaskId);
             this.renderTasks();
             this.updateStats();
+            this.closeDeleteModal();
+            this.showToast('Task deleted successfully!', 'success');
+        } else {
+            this.showToast(result.message || 'Failed to delete task', 'error');
+        }
+    }
+
+    async toggleTaskStatus(taskId) {
+        if (!this.db.isAuthenticated()) {
+            this.showToast('Please sign in to update tasks', 'error');
+            return;
+        }
+
+        const task = this.tasks.find(t => t.id === taskId);
+        if (task) {
+            const newStatus = task.status === 'completed' ? 'pending' : 'completed';
+            const updates = {
+                status: newStatus,
+                completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+            };
+
+            const result = await this.db.updateTask(taskId, updates);
             
-            const statusText = task.status === 'completed' ? 'completed' : 'marked as pending';
-            this.showToast(`Task ${statusText}!`, 'success');
+            if (result.success) {
+                task.status = newStatus;
+                task.completed_at = updates.completed_at;
+                this.renderTasks();
+                this.updateStats();
+                
+                const statusText = newStatus === 'completed' ? 'completed' : 'marked as pending';
+                this.showToast(`Task ${statusText}!`, 'success');
+            } else {
+                this.showToast(result.message || 'Failed to update task', 'error');
+            }
         }
     }
 
@@ -177,7 +236,7 @@ class TaskManager {
             document.getElementById('editTitle').value = task.title;
             document.getElementById('editDescription').value = task.description;
             document.getElementById('editPriority').value = task.priority;
-            document.getElementById('editDueDate').value = task.dueDate;
+            document.getElementById('editDueDate').value = task.due_date || '';
             document.getElementById('editCategory').value = task.category;
             
             document.getElementById('editModal').style.display = 'block';
@@ -213,7 +272,7 @@ class TaskManager {
         if (this.currentFilter !== 'all') {
             filteredTasks = filteredTasks.filter(task => {
                 if (this.currentFilter === 'overdue') {
-                    return task.status === 'pending' && task.dueDate && new Date(task.dueDate) < new Date();
+                    return task.status === 'pending' && task.due_date && new Date(task.due_date) < new Date();
                 }
                 return task.status === this.currentFilter;
             });
@@ -229,17 +288,17 @@ class TaskManager {
         return [...tasks].sort((a, b) => {
             switch (this.currentSort) {
                 case 'dueDate':
-                    if (!a.dueDate && !b.dueDate) return 0;
-                    if (!a.dueDate) return 1;
-                    if (!b.dueDate) return -1;
-                    return new Date(a.dueDate) - new Date(b.dueDate);
+                    if (!a.due_date && !b.due_date) return 0;
+                    if (!a.due_date) return 1;
+                    if (!b.due_date) return -1;
+                    return new Date(a.due_date) - new Date(b.due_date);
                 case 'priority':
                     const priorityOrder = { high: 3, medium: 2, low: 1 };
                     return priorityOrder[b.priority] - priorityOrder[a.priority];
                 case 'title':
                     return a.title.localeCompare(b.title);
                 case 'createdDate':
-                    return new Date(b.createdAt) - new Date(a.createdAt);
+                    return new Date(b.created_at) - new Date(a.created_at);
                 default:
                     return 0;
             }
@@ -265,10 +324,10 @@ class TaskManager {
     }
 
     createTaskHTML(task) {
-        const isOverdue = task.status === 'pending' && task.dueDate && new Date(task.dueDate) < new Date();
+        const isOverdue = task.status === 'pending' && task.due_date && new Date(task.due_date) < new Date();
         const statusClass = task.status === 'completed' ? 'completed' : (isOverdue ? 'overdue' : '');
         
-        const dueDateFormatted = task.dueDate ? this.formatDate(task.dueDate) : 'No due date';
+        const dueDateFormatted = task.due_date ? this.formatDate(task.due_date) : 'No due date';
         const priorityClass = `priority-${task.priority}`;
         
         return `
@@ -309,7 +368,7 @@ class TaskManager {
         const completed = this.tasks.filter(task => task.status === 'completed').length;
         const pending = this.tasks.filter(task => task.status === 'pending').length;
         const overdue = this.tasks.filter(task => 
-            task.status === 'pending' && task.dueDate && new Date(task.dueDate) < new Date()
+            task.status === 'pending' && task.due_date && new Date(task.due_date) < new Date()
         ).length;
 
         document.getElementById('totalCount').textContent = total;
@@ -334,8 +393,52 @@ class TaskManager {
         this.deletingTaskId = null;
     }
 
-    saveTasks() {
-        localStorage.setItem('tasks', JSON.stringify(this.tasks));
+    // Database methods
+    async loadTasks() {
+        if (!this.db.isAuthenticated()) {
+            this.tasks = [];
+            return;
+        }
+
+        const result = await this.db.getTasks();
+        if (result.success) {
+            this.tasks = result.tasks;
+        } else {
+            this.showToast(result.message || 'Failed to load tasks', 'error');
+            this.tasks = [];
+        }
+    }
+
+    setupRealtimeSubscription() {
+        if (!this.db.isAuthenticated()) return;
+
+        this.realtimeSubscription = this.db.subscribeToTasks((payload) => {
+            console.log('Real-time update:', payload);
+            
+            switch (payload.eventType) {
+                case 'INSERT':
+                    this.tasks.unshift(payload.new);
+                    break;
+                case 'UPDATE':
+                    const updateIndex = this.tasks.findIndex(task => task.id === payload.new.id);
+                    if (updateIndex !== -1) {
+                        this.tasks[updateIndex] = payload.new;
+                    }
+                    break;
+                case 'DELETE':
+                    this.tasks = this.tasks.filter(task => task.id !== payload.old.id);
+                    break;
+            }
+            
+            this.renderTasks();
+            this.updateStats();
+        });
+    }
+
+    cleanup() {
+        if (this.realtimeSubscription) {
+            this.realtimeSubscription.unsubscribe();
+        }
     }
 
     formatDate(dateString) {
@@ -406,8 +509,17 @@ function confirmDelete() {
 
 // Initialize the application
 let taskManager;
-document.addEventListener('DOMContentLoaded', () => {
+let authManager;
+
+document.addEventListener('DOMContentLoaded', async () => {
     taskManager = new TaskManager();
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+        if (taskManager) {
+            taskManager.cleanup();
+        }
+    });
 });
 
 // Add CSS animation for toast removal
