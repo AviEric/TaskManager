@@ -21,7 +21,7 @@ class AuthManager {
             <div class="modal-content auth-modal">
                 <div class="modal-header">
                     <h2 id="authTitle">Sign In</h2>
-                    <span class="close" onclick="authManager.closeAuthModal()">&times;</span>
+                    <span class="close" id="closeAuthModal">&times;</span>
                 </div>
                 <div class="modal-body">
                     <form id="authForm">
@@ -63,7 +63,7 @@ class AuthManager {
                 <i class="fas fa-user"></i>
                 <span id="userEmail"></span>
             </div>
-            <button class="btn btn-secondary" onclick="authManager.signOut()">
+            <button class="btn btn-secondary" id="signOutBtn">
                 <i class="fas fa-sign-out-alt"></i> Sign Out
             </button>
         `;
@@ -81,6 +81,17 @@ class AuthManager {
         // Switch between login/signup
         document.getElementById('authSwitchBtn').addEventListener('click', () => {
             this.toggleAuthMode();
+        });
+
+        // Sign out button and close modal (using event delegation since they're created dynamically)
+        document.addEventListener('click', (e) => {
+            if (e.target && e.target.id === 'signOutBtn') {
+                e.preventDefault();
+                this.signOut();
+            } else if (e.target && e.target.id === 'closeAuthModal') {
+                e.preventDefault();
+                this.closeAuthModal();
+            }
         });
     }
 
@@ -147,20 +158,28 @@ class AuthManager {
     }
 
     async signOut() {
-        const result = await this.db.signOut();
-        if (result.success) {
-            this.showMessage('Signed out successfully', 'success');
-            this.hideUserInfo();
-            this.showAuthModal();
+        console.log('Sign out button clicked');
+        try {
+            const result = await this.db.signOut();
+            console.log('Sign out result:', result);
             
-            // Clear tasks if task manager exists
-            if (typeof taskManager !== 'undefined') {
-                taskManager.tasks = [];
-                taskManager.renderTasks();
-                taskManager.updateStats();
+            if (result.success) {
+                this.showMessage('Signed out successfully', 'success');
+                this.hideUserInfo();
+                this.showAuthModal();
+                
+                // Clear tasks if task manager exists
+                if (typeof taskManager !== 'undefined') {
+                    taskManager.tasks = [];
+                    taskManager.renderTasks();
+                    taskManager.updateStats();
+                }
+            } else {
+                this.showMessage(result.message, 'error');
             }
-        } else {
-            this.showMessage(result.message, 'error');
+        } catch (error) {
+            console.error('Sign out error:', error);
+            this.showMessage('Error signing out', 'error');
         }
     }
 

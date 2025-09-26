@@ -18,6 +18,9 @@ class TaskManager {
         this.db = new DatabaseManager();
         this.auth = new AuthManager(this.db);
         
+        // Make authManager globally accessible
+        window.authManager = this.auth;
+        
         // Wait for database to initialize
         await this.db.init();
         
